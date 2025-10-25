@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import Word from './components/Word.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import Battlefield from './components/Battlefield.vue';
-import { generateStoryStream } from './services/gemini.js';
+import { generateStoryStream } from './services/sophnet.js';
 import { BACK_SPEED, DRAG_LERP, MAX_SPEED, MIN_SPEED } from './constants.js';
 import { initVoices, disposeVoices, speakAsync } from './services/tts.js';
 
