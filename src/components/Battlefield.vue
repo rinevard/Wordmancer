@@ -5,13 +5,14 @@
       <div v-if="enemyIntent" class="intent-pill enemy">{{ enemyIntent }}</div>
       <div
         class="role-label enemy"
+        ref="enemyLabelEl"
         @mouseenter="$emit('card-hover', { hovering: true, status: props.enemy?.status })"
         @mouseleave="$emit('card-hover', { hovering: false })"
       >
         ENEMY
       </div>
       <div class="glow-line white" />
-      <div v-if="enemyHealth != null" class="health-badge">{{ enemyHealth }}</div>
+      <div v-if="enemyHealth != null" class="health-badge" ref="enemyHealthEl">{{ enemyHealth }}</div>
     </div>
 
     <!-- 中部：随从区域 -->
@@ -38,18 +39,19 @@
       <div class="glow-line gold" />
       <div
         class="role-label player"
+        ref="playerLabelEl"
         @mouseenter="$emit('card-hover', { hovering: true, status: props.player?.status })"
         @mouseleave="$emit('card-hover', { hovering: false })"
       >
         PLAYER
       </div>
-      <div v-if="playerHealth != null" class="health-badge">{{ playerHealth }}</div>
+      <div v-if="playerHealth != null" class="health-badge" ref="playerHealthEl">{{ playerHealth }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import MinionCard from './MinionCard.vue';
 
 const props = defineProps({
@@ -82,6 +84,58 @@ const enemyIntent = computed(() => {
     return trimmed.length > 0 ? trimmed : '';
   }
   return '';
+});
+
+// DOM 引用
+const enemyLabelEl = ref(null);
+const playerLabelEl = ref(null);
+const enemyHealthEl = ref(null);
+const playerHealthEl = ref(null);
+
+function triggerAnimation(elRef, className) {
+  const el = elRef && elRef.value;
+  if (!el) return;
+  el.classList.remove(className);
+  // 强制重排以便重复触发动画
+  void el.offsetWidth;
+  el.classList.add(className);
+  const onEnd = () => {
+    el.classList.remove(className);
+    el.removeEventListener('animationend', onEnd);
+  };
+  el.addEventListener('animationend', onEnd);
+}
+
+const prevEnemyHp = ref(enemyHealth.value);
+watch(enemyHealth, async (nv, ov) => {
+  await nextTick();
+  if (ov == null) { prevEnemyHp.value = nv; return; }
+  if (nv == null) return;
+  if (nv < ov) {
+    // 敌方掉血：数值处抖动并短暂变红，ENEMY 向上顶一下
+    triggerAnimation(enemyHealthEl, 'hp-damage');
+    triggerAnimation(enemyLabelEl, 'bump-up');
+  } else if (nv > ov) {
+    // 敌方生命上涨：数值弹跳放大
+    triggerAnimation(enemyHealthEl, 'bounce-scale');
+  }
+  prevEnemyHp.value = nv;
+});
+
+const prevPlayerHp = ref(playerHealth.value);
+watch(playerHealth, async (nv, ov) => {
+  await nextTick();
+  if (ov == null) { prevPlayerHp.value = nv; return; }
+  if (nv == null) return;
+  if (nv < ov) {
+    // 我方掉血：数值处抖动并短暂变红，PLAYER 向下压一下
+    triggerAnimation(playerHealthEl, 'hp-damage');
+    triggerAnimation(playerLabelEl, 'bump-down');
+  } else if (nv > ov) {
+    // 我方生命上涨：数值弹跳放大
+    triggerAnimation(playerHealthEl, 'bounce-scale');
+  }
+  prevPlayerHp.value = nv;
 });
 </script>
 
@@ -244,5 +298,45 @@ const enemyIntent = computed(() => {
   text-shadow:
     0 0 3px rgba(255,255,255,0.65),
     0 0 10px rgba(255,255,255,0.35);
+}
+
+/* ========== 动画 ========== */
+@keyframes shakePoint {
+  0% { transform: translate(0, 0); }
+  15% { transform: translate(-2px, 0); }
+  30% { transform: translate(2px, 0); }
+  45% { transform: translate(-1px, 0); }
+  60% { transform: translate(1px, 0); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes bumpDown {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(8px); }
+  100% { transform: translateY(0); }
+}
+@keyframes bumpUp {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+@keyframes bounceScale {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+.health-badge.shake-point { animation: shakePoint 200ms ease-in-out; }
+.health-badge.bounce-scale { animation: bounceScale 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.role-label.bump-down { animation: bumpDown 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.role-label.bump-up { animation: bumpUp 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* 掉血时短暂变红并伴随轻微震动 */
+@keyframes hpDamageTint {
+  0% { color: #ffffff; filter: drop-shadow(0 0 6px rgba(255,60,60,0.2)); }
+  15% { color: #ff4d4d; filter: drop-shadow(0 0 10px rgba(255,60,60,0.55)); }
+  100% { color: #ffffff; filter: drop-shadow(0 0 6px rgba(255,60,60,0.0)); }
+}
+.health-badge.hp-damage {
+  animation: shakePoint 200ms ease-in-out, hpDamageTint 260ms ease-out;
 }
 </style>
