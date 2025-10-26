@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import Word from './components/Word.vue';
-import StatusPanel from './components/StatusPanel.vue';
 import Battlefield from './components/Battlefield.vue';
 import { generateStoryStream } from './services/sophnet.js';
 import { BACK_SPEED, DRAG_LERP, MAX_SPEED, MIN_SPEED } from './constants.js';
@@ -636,9 +635,25 @@ function applyStateChange(partial) {
 <template>
   <div id="app">
     <div class="main-content">
-      <!-- 左侧面板 -->
+      <!-- 左侧面板：改为词语漂浮框（替代原状态栏） -->
       <div class="left-panel-container">
-        <StatusPanel :statusText="hoveredStatus" />
+        <div class="bottom-box" ref="bottomEl">
+          <Word
+            v-for="it in bottomItems"
+            :key="it.id"
+            :id="it.id"
+            :word="it.word"
+            :x="it.x"
+            :y="it.y"
+            :isDragging="it.isDragging"
+            :absX="it.absX"
+            :absY="it.absY"
+            :opacity="bottomOpacity"
+            @pointerdown="handleChildPointerDown"
+            @mounted="handleChildMounted"
+            @resized="handleChildResized"
+          />
+        </div>
       </div>
       
       <!-- 中间战斗区 -->
@@ -701,30 +716,11 @@ function applyStateChange(partial) {
       </div>
     </div>
     
-    <!-- 下部区域：30% - 词语漂浮框 -->
-    <div
-      class="bottom-section"
-    >
-      <!-- 顶层字幕层：始终覆盖在最上层 -->
+    
+    <!-- 字幕：Teleport 到 body，固定定位全局显示 -->
+    <teleport to="body">
       <div class="subtitle" :style="{ opacity: subtitleOpacity }">{{ subtitleText }}</div>
-      <div class="bottom-box" ref="bottomEl">
-        <Word
-          v-for="it in bottomItems"
-          :key="it.id"
-          :id="it.id"
-          :word="it.word"
-          :x="it.x"
-          :y="it.y"
-          :isDragging="it.isDragging"
-          :absX="it.absX"
-          :absY="it.absY"
-          :opacity="bottomOpacity"
-          @pointerdown="handleChildPointerDown"
-          @mounted="handleChildMounted"
-          @resized="handleChildResized"
-        />
-      </div>
-    </div>
+    </teleport>
 
     <!-- 悬浮状态框：Teleport 到 body，固定定位，可越界于应用外 -->
     <teleport to="body">
@@ -1005,7 +1001,7 @@ body {
 
 .bottom-box {
   position: relative;
-  height: calc(100% - var(--gap)); /* 与下边界留出距离 */
+  height: calc(100% - var(--gap)); /* 与下边界留出距离（用于底部区域的旧样式）*/
   margin: 0 var(--bottom-hmargin); /* 自适应左右留白 */
   margin-top: var(--gap-sm); /* 与上边界留出一点距离 */
   background-color: #0a0a0a;
@@ -1014,12 +1010,18 @@ body {
   box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
 }
 
+/* 左侧面板内的漂浮框：占满面板且无额外边距 */
+.left-panel-container .bottom-box {
+  height: 100%;
+  margin: 0;
+}
+
 /* 字幕样式：位于上下分界线处（底部区域顶部），金色淡入淡出 */
 .subtitle {
-  position: absolute;
-  top: 0; /* 放在 bottom-section 顶部边界处 */
+  position: fixed;
+  top: clamp(8px, 2vh, 24px);
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   color: #ffd700;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.6), 0 0 18px rgba(255, 215, 0, 0.35);
   font-size: clamp(14px, 1.8vw, 22px);
@@ -1028,9 +1030,9 @@ body {
   pointer-events: none;
   transition: opacity 0.25s ease;
   white-space: pre-wrap;
-  max-width: calc(100% - 2 * var(--bottom-hmargin));
+  max-width: calc(100vw - 2 * var(--gap));
   text-align: center;
-  z-index: 9999;
+  z-index: 10000;
 }
 
 /* 悬浮状态框：统一艺术风格 */
