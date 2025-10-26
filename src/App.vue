@@ -192,7 +192,7 @@ function queueBottomWordsUpdate(newWords) {
 const gameState = ref({
   enemy: {
     health: 60,
-    intent: "攻击",
+    intent: "意图：攻击",
     status: ""
   },
   minions: [

@@ -2,6 +2,7 @@
   <div class="battlefield">
     <!-- 顶部：ENEMY 文本 + 冷白光横线 -->
     <div class="enemy-header">
+      <div v-if="enemyIntent" class="intent-pill enemy">{{ enemyIntent }}</div>
       <div
         class="role-label enemy"
         @mouseenter="$emit('card-hover', { hovering: true, status: props.enemy?.status })"
@@ -73,14 +74,24 @@ const playerHealth = computed(() => {
   const hp = props.player?.health;
   return Number.isFinite(hp) ? hp : null;
 });
+
+const enemyIntent = computed(() => {
+  const intent = props.enemy?.intent;
+  if (typeof intent === 'string') {
+    const trimmed = intent.trim();
+    return trimmed.length > 0 ? trimmed : '';
+  }
+  return '';
+});
 </script>
 
 <style scoped>
 .battlefield {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
+  gap: 8vh;
   height: 100%;
   width: 100%;
   padding: clamp(8px, 2vw, 24px);
@@ -168,8 +179,8 @@ const playerHealth = computed(() => {
   align-items: center;
   width: 100%;
   max-height: 25vh; /* 区域总高度上限 */
-  /* 与上下 glow-line 的间距 */
-  margin: 8vh 0;
+  /* 间距交由父容器 gap 控制 */
+  margin: 0;
 }
 
 .minion-slot {
@@ -218,5 +229,20 @@ const playerHealth = computed(() => {
   text-shadow:
     0 0 3px rgba(255,220,120,0.75),
     0 0 10px rgba(255,215,128,0.45);
+}
+
+/* 敌方意图：置于 ENEMY 文本上方，采用冷白主题 */
+.intent-pill {
+  user-select: none;
+  padding: clamp(2px, 0.6vw, 6px) clamp(10px, 1.6vw, 16px);
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.06);
+  font-size: clamp(12px, 1.6vw, 14px);
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  text-shadow:
+    0 0 3px rgba(255,255,255,0.65),
+    0 0 10px rgba(255,255,255,0.35);
 }
 </style>
