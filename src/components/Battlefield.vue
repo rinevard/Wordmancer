@@ -10,6 +10,7 @@
         ENEMY
       </div>
       <div class="glow-line white" />
+      <div v-if="enemyHealth != null" class="health-badge">{{ enemyHealth }}</div>
     </div>
 
     <!-- 中部：随从区域 -->
@@ -41,6 +42,7 @@
       >
         PLAYER
       </div>
+      <div v-if="playerHealth != null" class="health-badge">{{ playerHealth }}</div>
     </div>
   </div>
 </template>
@@ -60,6 +62,16 @@ defineEmits(['card-hover']);
 const slots = computed(() => {
   const list = Array.isArray(props.minions) ? props.minions.slice(0, 4) : [];
   return [0, 1, 2, 3].map((i) => list[i] || null);
+});
+
+const enemyHealth = computed(() => {
+  const hp = props.enemy?.health;
+  return Number.isFinite(hp) ? hp : null;
+});
+
+const playerHealth = computed(() => {
+  const hp = props.player?.health;
+  return Number.isFinite(hp) ? hp : null;
 });
 </script>
 
@@ -83,6 +95,7 @@ const slots = computed(() => {
   align-items: center;
   gap: clamp(8px, 1.4vw, 14px);
   width: 100%;
+  position: relative;
 }
 
 .role-label {
@@ -178,5 +191,32 @@ const slots = computed(() => {
 .minion-slot.filled {
   border-color: rgba(255,255,255,0.45);
   background: rgba(255,255,255,0.06);
+}
+
+.health-badge {
+  position: absolute;
+  right: clamp(8px, 1.6vw, 16px);
+  bottom: clamp(4px, 1vw, 10px);
+  font-size: clamp(1rem, 2.2vw, 1.4rem);
+  font-weight: 800;
+  color: #cfd2ff; /* default fallback */
+  text-shadow: 0 0 6px rgba(207, 210, 255, 0.28);
+  user-select: none;
+}
+
+/* 敌方：使用与白色光线一致的冷白色 */
+.enemy-header .health-badge {
+  color: #ffffff;
+  text-shadow:
+    0 0 3px rgba(255,255,255,0.65),
+    0 0 10px rgba(255,255,255,0.35);
+}
+
+/* 我方：使用与金色光线一致的金色 */
+.player-footer .health-badge {
+  color: #ffd780;
+  text-shadow:
+    0 0 3px rgba(255,220,120,0.75),
+    0 0 10px rgba(255,215,128,0.45);
 }
 </style>
