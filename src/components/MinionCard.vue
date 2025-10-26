@@ -1,5 +1,8 @@
 <template>
   <div class="minion-card" ref="cardEl" @mouseenter="$emit('mouseenter')" @mouseleave="$emit('mouseleave')">
+    <div class="art">
+      <img :src="effectiveImage" alt="minion" />
+    </div>
     <div class="name">{{ name }}</div>
     <div class="attack" ref="atkEl">{{ attack }}</div>
     <div class="health" ref="hpEl">{{ health }}</div>
@@ -7,18 +10,22 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, computed } from 'vue';
+import defaultMinion from '../../test_minion.png';
 
 const props = defineProps({
   name: String,
   attack: Number,
-  health: Number
+  health: Number,
+  imageSrc: String
 });
 defineEmits(['mouseenter', 'mouseleave']);
 
 const cardEl = ref(null);
 const atkEl = ref(null);
 const hpEl = ref(null);
+
+const effectiveImage = computed(() => props.imageSrc || defaultMinion);
 
 function triggerAnimation(elRef, className) {
   const el = elRef && elRef.value;
@@ -71,13 +78,32 @@ watch(() => props.attack, async (nv, ov) => {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   box-shadow: 0 6px 18px rgba(0,0,0,0.55);
   color: #cfd2ff;
   text-align: center;
   transition: border-color 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
+}
+
+.art {
+  width: 100%;
+  aspect-ratio: 1 / 1; /* 图片原始为方形，顶部展示区域为正方形 */
+  overflow: hidden;
+  border-radius: 0;
+  background-color: #0f111a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 适配1328x1328，保持比例不裁切 */
+  display: block;
+  /* filter: grayscale(100%) invert(100%); */
 }
 
 .minion-card:hover {
@@ -90,8 +116,7 @@ watch(() => props.attack, async (nv, ov) => {
   font-size: clamp(14px, 1.6vw, 18px);
   line-height: 1.2;
   color: #f5f6ff;
-  margin-bottom: auto;
-  padding-top: 6px;
+  margin-top: 6px;
 }
 
 .attack {
@@ -100,7 +125,7 @@ watch(() => props.attack, async (nv, ov) => {
   left: 10px;
   font-size: clamp(1rem, 2.2vw, 1.5rem);
   font-weight: 800;
-  color: #ff8080;
+  color: #e8e8e8;
 }
 
 .health {
@@ -109,7 +134,7 @@ watch(() => props.attack, async (nv, ov) => {
   right: 10px;
   font-size: clamp(1rem, 2.2vw, 1.5rem);
   font-weight: 800;
-  color: #33ff99;
+  color: #e8e8e8;
 }
 
 /* ========== 动画（与战场统一） ========== */

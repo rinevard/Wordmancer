@@ -227,12 +227,12 @@ watch(playerHealth, async (nv, ov) => {
 
 .minions-area {
   display: grid;
-  grid-template-columns: repeat(4, 20%);
+  grid-template-columns: repeat(4, 24%);
   justify-content: center; /* 水平居中整个网格 */
-  column-gap: 4%;
+  column-gap: 1%;
   align-items: center;
   width: 100%;
-  max-height: 25vh; /* 区域总高度上限 */
+  max-height: 30vh; /* 区域总高度上限（放大 6/5） */
   /* 间距交由父容器 gap 控制 */
   margin: 0;
 }
@@ -242,7 +242,7 @@ watch(playerHealth, async (nv, ov) => {
   /* 高宽比 4:3，随宽度自适应 */
   aspect-ratio: 3 / 4;
   /* 槽高度不能超过 25vh。用容器限制高度，槽内再用最大高度 */
-  max-height: 25vh;
+  max-height: 30vh; /* 放大 6/5 */
   /* 使用实线边框并提升对比度 */
   border: 2px solid rgba(255,255,255,0.35);
   border-radius: 10px;

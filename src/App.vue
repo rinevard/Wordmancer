@@ -196,6 +196,12 @@ const gameState = ref({
     status: ""
   },
   minions: [
+    {
+      name: "测试随从",
+      attack: 3,
+      health: 4,
+      status: ""
+    }
   ],
   player: {
     health: 30,
