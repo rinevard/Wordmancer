@@ -12,12 +12,18 @@ const dropEl = ref(null);
 const battlefieldContainerEl = ref(null);
 const battlefieldFitEl = ref(null);
 
+// 唯一 ID 生成（允许同名词条并存）
+let nextItemAutoId = 1;
+function generateItemId(word) {
+  return `${word}#${nextItemAutoId++}`;
+}
+
 // 词条对象结构
 function createItem(word) {
   const speed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
   const angle = Math.random() * Math.PI * 2;
   return {
-    id: word, // 简化：以单词为ID（如未来可能重复，请改为uuid）
+    id: generateItemId(word), // 使用唯一ID，允许同名词条并存
     word,
     x: 0,
     y: 0,
@@ -141,10 +147,44 @@ function animateOpacity(target, durationMs) {
 }
 
 function queueBottomWordsUpdate(newWords) {
-  const next = Array.isArray(newWords) ? newWords.slice() : [];
+  const nextWords = Array.isArray(newWords) ? newWords.slice() : [];
   wordsFadePromise = wordsFadePromise.then(async () => {
     await animateOpacity(0, 250);
-    bottomItems.value = next.map(createItem);
+
+    // 按旧词一一匹配保留原位；新增随机放置
+    const oldList = Array.isArray(bottomItems.value) ? bottomItems.value.slice() : [];
+    const pool = Object.create(null); // word -> [items]
+    for (const it of oldList) {
+      const key = it?.word ?? '';
+      if (!pool[key]) pool[key] = [];
+      pool[key].push(it);
+    }
+
+    const bounds = getBounds(bottomEl.value);
+    const result = [];
+    for (const w of nextWords) {
+      const arr = pool[w];
+      if (arr && arr.length) {
+        const it = arr.shift();
+        // 保留位置与速度，重置交互状态
+        it.word = w;
+        it.state = 'regular';
+        it.isDragging = false;
+        it.absX = 0;
+        it.absY = 0;
+        result.push(it);
+      } else {
+        const it = createItem(w);
+        // 新词：随机放置位置
+        const maxX = Math.max(0, (bounds.width || 0) - it.w);
+        const maxY = Math.max(0, (bounds.height || 0) - it.h);
+        it.x = Math.random() * maxX;
+        it.y = Math.random() * maxY;
+        result.push(it);
+      }
+    }
+
+    bottomItems.value = result;
     await animateOpacity(1, 250);
   });
 }
