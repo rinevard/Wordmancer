@@ -1,51 +1,66 @@
 <template>
   <div class="battlefield">
-    <div class="enemy-area">
-      <HeroCard
-        v-if="enemy"
-        name="Enemy"
-        :health="enemy.health"
-        :intent="enemy.intent"
-        type="enemy"
-        @mouseenter="$emit('card-hover', { hovering: true, status: enemy.status })"
+    <!-- 顶部：ENEMY 文本 + 冷白光横线 -->
+    <div class="enemy-header">
+      <div
+        class="role-label enemy"
+        @mouseenter="$emit('card-hover', { hovering: true, status: props.enemy?.status })"
         @mouseleave="$emit('card-hover', { hovering: false })"
-      />
+      >
+        ENEMY
+      </div>
+      <div class="glow-line white" />
     </div>
+
+    <!-- 中部：随从区域 -->
     <div class="minions-area">
-      <MinionCard
-        v-for="(minion, index) in minions"
+      <div
+        v-for="(slot, index) in slots"
         :key="index"
-        :name="minion.name"
-        :attack="minion.attack"
-        :health="minion.health"
-        @mouseenter="$emit('card-hover', { hovering: true, status: minion.status })"
-        @mouseleave="$emit('card-hover', { hovering: false })"
-      />
+        class="minion-slot"
+        :class="{ filled: !!slot }"
+      >
+        <MinionCard
+          v-if="slot"
+          :name="slot.name"
+          :attack="slot.attack"
+          :health="slot.health"
+          @mouseenter="$emit('card-hover', { hovering: true, status: slot.status })"
+          @mouseleave="$emit('card-hover', { hovering: false })"
+        />
+      </div>
     </div>
-    <div class="player-area">
-      <HeroCard
-        v-if="player"
-        name="Player"
-        :health="player.health"
-        type="player"
-        @mouseenter="$emit('card-hover', { hovering: true, status: player.status })"
+
+    <!-- 底部：金色光横线 + PLAYER 文本 -->
+    <div class="player-footer">
+      <div class="glow-line gold" />
+      <div
+        class="role-label player"
+        @mouseenter="$emit('card-hover', { hovering: true, status: props.player?.status })"
         @mouseleave="$emit('card-hover', { hovering: false })"
-      />
+      >
+        PLAYER
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import HeroCard from './HeroCard.vue';
+import { computed } from 'vue';
 import MinionCard from './MinionCard.vue';
 
-defineProps({
+const props = defineProps({
   enemy: Object,
   minions: Array,
   player: Object
 });
 
 defineEmits(['card-hover']);
+
+const slots = computed(() => {
+  const list = Array.isArray(props.minions) ? props.minions.slice(0, 4) : [];
+  return [0, 1, 2, 3].map((i) => list[i] || null);
+});
 </script>
 
 <style scoped>
@@ -58,30 +73,110 @@ defineEmits(['card-hover']);
   width: 100%;
   padding: clamp(8px, 2vw, 24px);
   box-sizing: border-box;
+  position: relative;
 }
 
-.enemy-area {
+.enemy-header,
+.player-footer {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.4vw, 14px);
   width: 100%;
-  margin-bottom: 10px;
+}
+
+.role-label {
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5em;
+  font-size: clamp(16px, 2.2vw, 22px);
+  font-weight: 600;
+  color: #d8dbff;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+/* 悬停时：与 Word.vue 保持一致的金色泛光 */
+.role-label:hover {
+  color: #ffff80;
+  text-shadow:
+    0 0 3px rgba(255, 240, 150, 0.85),
+    0 0 10px rgba(255, 220, 120, 0.78),
+    0 0 22px rgba(255, 200, 80, 0.60),
+    0 0 36px rgba(255, 200, 80, 0.40),
+    0 0 52px rgba(255, 200, 80, 0.26);
+}
+
+.glow-line {
+  position: relative;
+  width: min(92%, 900px);
+  height: 2px; /* 内核线 */
+  border-radius: 2px;
+  overflow: visible;
+}
+
+.glow-line::before,
+.glow-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* 内核 */
+.glow-line.white {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.9) 10%, rgba(255,255,255,0.9) 90%, rgba(255,255,255,0) 100%);
+}
+.glow-line.gold {
+  background: linear-gradient(90deg, rgba(255,215,128,0) 0%, rgba(255,215,128,0.9) 10%, rgba(255,215,128,0.9) 90%, rgba(255,215,128,0) 100%);
+}
+
+/* 外圈光晕 */
+.glow-line.white::after {
+  height: 8px;
+  border-radius: 8px;
+  background: radial-gradient(closest-side, rgba(255,255,255,0.55), rgba(255,255,255,0) 70%);
+  filter: blur(2px);
+}
+.glow-line.gold::after {
+  height: 8px;
+  border-radius: 8px;
+  background: radial-gradient(closest-side, rgba(255,220,120,0.55), rgba(255,220,120,0) 70%);
+  filter: blur(2px);
 }
 
 .minions-area {
-  display: flex;
-  gap: clamp(6px, 1.5vw, 16px);
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(4, 20%);
+  justify-content: center; /* 水平居中整个网格 */
+  column-gap: 4%;
   align-items: center;
-  flex: 1;
   width: 100%;
-  min-height: clamp(96px, 14vh, 160px); /* 随视口高度变化 */
-  margin: 10px 0;
+  max-height: 25vh; /* 区域总高度上限 */
+  /* 与上下 glow-line 的间距 */
+  margin: 8vh 0;
 }
 
-.player-area {
-  display: flex;
-  justify-content: center;
+.minion-slot {
   width: 100%;
-  margin-top: 10px;
+  /* 高宽比 4:3，随宽度自适应 */
+  aspect-ratio: 3 / 4;
+  /* 槽高度不能超过 25vh。用容器限制高度，槽内再用最大高度 */
+  max-height: 25vh;
+  /* 使用实线边框并提升对比度 */
+  border: 2px solid rgba(255,255,255,0.35);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.05);
+  box-sizing: border-box;
+}
+
+.minion-slot.filled {
+  border-color: rgba(255,255,255,0.45);
+  background: rgba(255,255,255,0.06);
 }
 </style>

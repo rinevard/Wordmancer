@@ -606,7 +606,15 @@ function applyStateChange(partial) {
     s.enemy = { ...s.enemy, ...partial.enemy };
   }
   if (Array.isArray(partial.minions)) {
-    s.minions = partial.minions.map((m) => ({ ...m }));
+    // 限制最多 4 个随从，并按顺序填入四个槽位
+    const next = partial.minions.slice(0, 4).map((m) => ({
+      name: m?.name ?? '',
+      attack: Number.isFinite(m?.attack) ? m.attack : 0,
+      health: Number.isFinite(m?.health) ? m.health : 0,
+      status: typeof m?.status === 'string' ? m.status : ''
+    }));
+    s.minions = next;
+    // 若超出 4 个，静默截断（UI 已固定 4 槽）；需要提示可在此加入反馈
   }
   if (partial.player && typeof partial.player === 'object') {
     const { words, ...rest } = partial.player;
@@ -729,7 +737,7 @@ function applyStateChange(partial) {
         class="hover-status-tooltip"
         :style="computeTooltipStyle(mouseX, mouseY)"
       >
-        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : '无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n' }}
+        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : '无特殊状态' }}
       </div>
     </teleport>
   </div>
@@ -754,7 +762,7 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   background-color: #000000;
   color: #f0f0f0;
 }
@@ -885,8 +893,8 @@ body {
   border: 2px solid #323232;
   background-color: #141414;
   color: #9696c8;
-  font-size: var(--font-sm);
-  font-family: 'Courier New', monospace;
+  font-size: var(--font-md);
+  font-family: Garamond, 'Times New Roman', serif;
   outline: none;
   transition: border-color 0.3s;
 }
@@ -911,8 +919,8 @@ body {
   border: none;
   background-color: #141414;
   color: #9696c8;
-  font-size: var(--font-sm);
-  font-family: 'Courier New', monospace;
+  font-size: var(--font-md);
+  font-family: Garamond, 'Times New Roman', serif;
   outline: none;
   transition: border-color 0.3s;
   line-height: 1.6;
@@ -936,7 +944,7 @@ body {
   cursor: pointer;
   font-size: var(--font-sm);
   font-weight: normal;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   transition: all 0.2s;
   white-space: nowrap;
   letter-spacing: 1px;
@@ -970,7 +978,7 @@ body {
   cursor: pointer;
   font-size: var(--font-sm);
   font-weight: normal;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   transition: all 0.2s;
   white-space: nowrap;
   letter-spacing: 1px;
@@ -1025,7 +1033,9 @@ body {
   color: #ffd700;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.6), 0 0 18px rgba(255, 215, 0, 0.35);
   font-size: clamp(14px, 1.8vw, 22px);
-  font-weight: bold;
+  font-weight: 500;
+  font-style: italic;
+  font-family: 'Cormorant Garamond', Garamond, 'Times New Roman', serif;
   letter-spacing: 1px;
   pointer-events: none;
   transition: opacity 0.25s ease;
@@ -1048,7 +1058,7 @@ body {
   pointer-events: none; /* 不拦截鼠标 */
   white-space: pre-wrap; /* 支持多行状态 */
   line-height: 1.5;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   font-size: var(--font-sm);
   z-index: 100000; /* 高于字幕层 */
 }

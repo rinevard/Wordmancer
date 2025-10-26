@@ -94,7 +94,7 @@ onUnmounted(() => {
   box-shadow: none; /* 移除阴影 */
   transition: color 0.2s, transform 0.1s;
   color: #d8dbff; /* 常态为冷色调，悬停变金色 */
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   font-size: clamp(16px, 2vw, 24px);
   font-weight: bold;
   letter-spacing: 2px;
