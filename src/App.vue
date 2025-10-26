@@ -377,6 +377,36 @@ function tick(ts) {
   rafId = requestAnimationFrame(tick);
 }
 
+// 右侧放词区：生成词与词之间的连接线（细线）与视窗尺寸
+const dropConnections = computed(() => {
+  const el = dropEl.value;
+  if (!el) return { width: 0, height: 0, lines: [] };
+  const bounds = getBounds(el);
+  const nodes = dropItems.value.map((it) => {
+    if (it.state === 'dragging') {
+      const cx = (it.absX - bounds.left) + it.w / 2;
+      const cy = (it.absY - bounds.top) + it.h / 2;
+      return { id: it.id, cx, cy };
+    }
+    return { id: it.id, cx: it.x + it.w / 2, cy: it.y + it.h / 2 };
+  });
+  const lines = [];
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i];
+      const b = nodes[j];
+      lines.push({
+        key: `${a.id}|${b.id}|${i}-${j}`,
+        x1: a.cx,
+        y1: a.cy,
+        x2: b.cx,
+        y2: b.cy,
+      });
+    }
+  }
+  return { width: bounds.width, height: bounds.height, lines };
+});
+
 // 拖拽上下文（每次拖拽的临时数据）
 const dragging = ref(null); // { id, from: 'bottom'|'drop', lastX, lastY, lastT }
 
@@ -684,6 +714,24 @@ function applyStateChange(partial) {
             class="drop-zone"
             ref="dropEl"
           >
+            <!-- 连接线覆盖层：仅在存在两个及以上词时显示 -->
+            <svg
+              v-if="dropConnections.lines.length"
+              class="drop-connections"
+              :viewBox="`0 0 ${dropConnections.width} ${dropConnections.height}`"
+              preserveAspectRatio="none"
+            >
+              <g class="lines">
+                <line
+                  v-for="line in dropConnections.lines"
+                  :key="line.key"
+                  :x1="line.x1"
+                  :y1="line.y1"
+                  :x2="line.x2"
+                  :y2="line.y2"
+                />
+              </g>
+            </svg>
             <div v-if="dropItems.length === 0" class="drop-hint">
               将词语拖到这里
             </div>
@@ -856,6 +904,21 @@ body {
   overflow: hidden;
   min-height: 0;
 }
+
+  /* 右侧放词区的连线覆盖层 */
+  .drop-connections {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* 不影响拖拽 */
+    z-index: 0; /* 位于词之下（词 zIndex=1/1000）*/
+  }
+  .drop-connections .lines line {
+    stroke: rgba(255, 255, 200, 0.22);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
 
 .drop-hint {
   position: absolute;
