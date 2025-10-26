@@ -1,11 +1,11 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import Word from './components/Word.vue';
-import StatusPanel from './components/StatusPanel.vue';
 import Battlefield from './components/Battlefield.vue';
-import { generateStoryStream } from './services/gemini.js';
+import { generateStoryStream } from './services/sophnet.js';
 import { BACK_SPEED, DRAG_LERP, MAX_SPEED, MIN_SPEED } from './constants.js';
 import { initVoices, disposeVoices, speakAsync } from './services/tts.js';
+import { getOrGenerateMinionImage } from './services/tti.js';
 
 // 容器引用
 const bottomEl = ref(null);
@@ -13,12 +13,18 @@ const dropEl = ref(null);
 const battlefieldContainerEl = ref(null);
 const battlefieldFitEl = ref(null);
 
+// 唯一 ID 生成（允许同名词条并存）
+let nextItemAutoId = 1;
+function generateItemId(word) {
+  return `${word}#${nextItemAutoId++}`;
+}
+
 // 词条对象结构
 function createItem(word) {
   const speed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
   const angle = Math.random() * Math.PI * 2;
   return {
-    id: word, // 简化：以单词为ID（如未来可能重复，请改为uuid）
+    id: generateItemId(word), // 使用唯一ID，允许同名词条并存
     word,
     x: 0,
     y: 0,
@@ -37,8 +43,8 @@ function createItem(word) {
   };
 }
 
-// 首回合初始手牌（同时用于底部漂浮与 current_state.words）
-const INITIAL_WORDS = ['锁链', '冰霜', '碎裂', '打击', '扭曲', '召唤'];
+// Initial hand for the first turn (used for both bottom floating and current_state.words)
+const INITIAL_WORDS = ['Chain', 'Frost', 'Shatter', 'Strike', 'Twist', 'Summon'];
 const bottomItems = ref(INITIAL_WORDS.map(createItem));
 
 const dropItems = ref([]);
@@ -142,10 +148,44 @@ function animateOpacity(target, durationMs) {
 }
 
 function queueBottomWordsUpdate(newWords) {
-  const next = Array.isArray(newWords) ? newWords.slice() : [];
+  const nextWords = Array.isArray(newWords) ? newWords.slice() : [];
   wordsFadePromise = wordsFadePromise.then(async () => {
     await animateOpacity(0, 250);
-    bottomItems.value = next.map(createItem);
+
+    // 按旧词一一匹配保留原位；新增随机放置
+    const oldList = Array.isArray(bottomItems.value) ? bottomItems.value.slice() : [];
+    const pool = Object.create(null); // word -> [items]
+    for (const it of oldList) {
+      const key = it?.word ?? '';
+      if (!pool[key]) pool[key] = [];
+      pool[key].push(it);
+    }
+
+    const bounds = getBounds(bottomEl.value);
+    const result = [];
+    for (const w of nextWords) {
+      const arr = pool[w];
+      if (arr && arr.length) {
+        const it = arr.shift();
+        // 保留位置与速度，重置交互状态
+        it.word = w;
+        it.state = 'regular';
+        it.isDragging = false;
+        it.absX = 0;
+        it.absY = 0;
+        result.push(it);
+      } else {
+        const it = createItem(w);
+        // 新词：随机放置位置
+        const maxX = Math.max(0, (bounds.width || 0) - it.w);
+        const maxY = Math.max(0, (bounds.height || 0) - it.h);
+        it.x = Math.random() * maxX;
+        it.y = Math.random() * maxY;
+        result.push(it);
+      }
+    }
+
+    bottomItems.value = result;
     await animateOpacity(1, 250);
   });
 }
@@ -153,7 +193,7 @@ function queueBottomWordsUpdate(newWords) {
 const gameState = ref({
   enemy: {
     health: 60,
-    intent: "攻击",
+    intent: "Intent: Attack",
     status: ""
   },
   minions: [
@@ -165,10 +205,104 @@ const gameState = ref({
   words: INITIAL_WORDS.slice()
 });
 
-const hoveredStatus = ref('');
+// History: past_states (for prompting LLM with retrospective context)
+const pastStates = ref([]); // Each item: { state, change_overview }
+// Store the first analyze text of this turn
+let firstAnalyzeText = '';
 
-function handleCardHover(status) {
-  hoveredStatus.value = status;
+// 文生图：随从名 -> 图片 URL
+const minionImages = ref({});
+const generatingNames = new Set();
+
+function ensureMinionImage(name) {
+  const key = String(name || '').trim();
+  if (!key) return;
+  if (minionImages.value[key]) return;
+  if (generatingNames.has(key)) return;
+  generatingNames.add(key);
+  getOrGenerateMinionImage(key)
+    .then((url) => {
+      if (url) {
+        // 触发响应式更新
+        minionImages.value = { ...minionImages.value, [key]: url };
+      }
+    })
+    .catch(() => {})
+    .finally(() => generatingNames.delete(key));
+}
+
+// 监听随从列表变化，按名称触发图片生成/缓存
+watch(
+  () => (gameState.value.minions || []).map((m) => m?.name).join('|'),
+  () => {
+    const list = Array.isArray(gameState.value.minions) ? gameState.value.minions : [];
+    for (const m of list) ensureMinionImage(m?.name);
+  },
+  { immediate: true }
+);
+
+// 悬浮状态（来自战场卡牌）
+const hoveredStatus = ref('');
+const isHoveringCard = ref(false);
+// 在进入悬停瞬间锁定提示方向（相对于指针：right/bottom 为 true 表示向右/向下偏移）
+const tooltipLock = ref(null);
+// 鼠标坐标（用于决定象限与定位）
+const mouseX = ref(0);
+const mouseY = ref(0);
+
+function handleCardHover(payload) {
+  const wasHovering = isHoveringCard.value;
+  if (payload && typeof payload === 'object') {
+    isHoveringCard.value = !!payload.hovering;
+    hoveredStatus.value = payload.status ?? '';
+  } else {
+    // 兼容旧字符串形式
+    isHoveringCard.value = !!payload;
+    hoveredStatus.value = String(payload || '');
+  }
+  // 进入时锁定一次方向（以进入瞬间的鼠标象限的对立象限为准）
+  if (!wasHovering && isHoveringCard.value) {
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const isRight = mouseX.value >= cx;
+    const isBottom = mouseY.value >= cy;
+    // 取对立象限：指针在右上，则锁定左下；指针在左下，则锁定右上 ...
+    tooltipLock.value = { right: !isRight, bottom: !isBottom };
+  }
+  // 离开时清除锁定
+  if (wasHovering && !isHoveringCard.value) {
+    tooltipLock.value = null;
+  }
+}
+
+function onMouseMove(e) {
+  mouseX.value = e.clientX;
+  mouseY.value = e.clientY;
+}
+
+function computeTooltipStyle(x, y) {
+  const gap = 10; // 与指针间距
+  const pos = `${gap}px`;
+  const negFull = `calc(-100% - ${gap}px)`;
+
+  // 若已锁定，沿用锁定方向；否则使用“当前象限的对立象限”作为即时方向
+  let lock = tooltipLock.value;
+  if (!lock) {
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const isRight = x >= cx;
+    const isBottom = y >= cy;
+    lock = { right: !isRight, bottom: !isBottom };
+  }
+
+  const tx = lock.right ? pos : negFull;
+  const ty = lock.bottom ? pos : negFull;
+
+  return {
+    left: `${x}px`,
+    top: `${y}px`,
+    transform: `translate(${tx}, ${ty})`,
+  };
 }
 
 // 语音
@@ -319,6 +453,36 @@ function tick(ts) {
   stepBacking(dt);
   rafId = requestAnimationFrame(tick);
 }
+
+// 右侧放词区：生成词与词之间的连接线（细线）与视窗尺寸
+const dropConnections = computed(() => {
+  const el = dropEl.value;
+  if (!el) return { width: 0, height: 0, lines: [] };
+  const bounds = getBounds(el);
+  const nodes = dropItems.value.map((it) => {
+    if (it.state === 'dragging') {
+      const cx = (it.absX - bounds.left) + it.w / 2;
+      const cy = (it.absY - bounds.top) + it.h / 2;
+      return { id: it.id, cx, cy };
+    }
+    return { id: it.id, cx: it.x + it.w / 2, cy: it.y + it.h / 2 };
+  });
+  const lines = [];
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i];
+      const b = nodes[j];
+      lines.push({
+        key: `${a.id}|${b.id}|${i}-${j}`,
+        x1: a.cx,
+        y1: a.cy,
+        x2: b.cx,
+        y2: b.cy,
+      });
+    }
+  }
+  return { width: bounds.width, height: bounds.height, lines };
+});
 
 // 拖拽上下文（每次拖拽的临时数据）
 const dragging = ref(null); // { id, from: 'bottom'|'drop', lastX, lastY, lastT }
@@ -473,6 +637,7 @@ onMounted(() => {
   initVoices();
   rafId = requestAnimationFrame(tick);
   window.addEventListener('resize', onResize);
+  window.addEventListener('mousemove', onMouseMove);
   // 首次布局战场比例
   layoutBattlefieldFit();
   // 监听容器尺寸变化（更精细 than window.resize）
@@ -488,6 +653,7 @@ onUnmounted(() => {
   if (rafId) cancelAnimationFrame(rafId);
   cancelSubtitleAnim();
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('mousemove', onMouseMove);
   window.removeEventListener('pointermove', onPointerMove);
   if (battlefieldResizeObserver.value) {
     try { battlefieldResizeObserver.value.disconnect(); } catch (e) {}
@@ -498,7 +664,7 @@ const battlefieldResizeObserver = ref(null);
 
 async function handleSend() {
   if (!userPrompt.value.trim()) {
-    alert('请输入提示');
+    alert('Please enter a prompt');
     return;
   }
   isLoading.value = true;
@@ -513,7 +679,13 @@ async function handleSend() {
     dropItems.value = [];
     // 保持底部手牌可见，不再在生成期间淡出
     let producedAny = false;
-    for await (const step of generateStoryStream(gameState.value, action)) {
+    // 传入 past_states，并捕获首个 analyze 文本
+    firstAnalyzeText = '';
+    const streamOptions = {
+      pastStates: pastStates.value,
+      onFirstAnalyze: (txt) => { if (!firstAnalyzeText) firstAnalyzeText = String(txt || ''); },
+    };
+    for await (const step of generateStoryStream(gameState.value, action, streamOptions)) {
       if (step.type === 'narrator' && step.text) {
         story.value += (story.value ? '\n' : '') + step.text;
         producedAny = true;
@@ -527,16 +699,25 @@ async function handleSend() {
       }
     }
     if (!producedAny) {
-      await speakAsync('抱歉，剧情生成失败。');
+      await speakAsync('Sorry, story generation failed.');
     }
   } finally {
     isLoading.value = false;
-    // 按钮可再次点击时清空输入框
+    // Clear input box when button can be clicked again
     userPrompt.value = '';
-    // 结束后根据 pendingWords 或当前 gameState.words 恢复/更新底部手牌并淡入
+    // After completion, restore/update bottom hand based on pendingWords or current gameState.words and fade in
     const next = pendingWords.value ?? gameState.value.words ?? [];
     pendingWords.value = null;
     queueBottomWordsUpdate(next);
+    // Turn complete: record the pre-turn state and first analyze to past_states
+    try {
+      const snapshotState = JSON.parse(JSON.stringify(gameState.value));
+      const changeOverview = firstAnalyzeText || '';
+      pastStates.value = [
+        ...pastStates.value,
+        { state: snapshotState, change_overview: changeOverview }
+      ];
+    } catch (_) {}
   }
 }
 
@@ -547,7 +728,15 @@ function applyStateChange(partial) {
     s.enemy = { ...s.enemy, ...partial.enemy };
   }
   if (Array.isArray(partial.minions)) {
-    s.minions = partial.minions.map((m) => ({ ...m }));
+    // 限制最多 4 个随从，并按顺序填入四个槽位
+    const next = partial.minions.slice(0, 4).map((m) => ({
+      name: m?.name ?? '',
+      attack: Number.isFinite(m?.attack) ? m.attack : 0,
+      health: Number.isFinite(m?.health) ? m.health : 0,
+      status: typeof m?.status === 'string' ? m.status : ''
+    }));
+    s.minions = next;
+    // 若超出 4 个，静默截断（UI 已固定 4 槽）；需要提示可在此加入反馈
   }
   if (partial.player && typeof partial.player === 'object') {
     const { words, ...rest } = partial.player;
@@ -576,9 +765,25 @@ function applyStateChange(partial) {
 <template>
   <div id="app">
     <div class="main-content">
-      <!-- 左侧面板 -->
+      <!-- 左侧面板：改为词语漂浮框（替代原状态栏） -->
       <div class="left-panel-container">
-        <StatusPanel :statusText="hoveredStatus" />
+        <div class="bottom-box" ref="bottomEl">
+          <Word
+            v-for="it in bottomItems"
+            :key="it.id"
+            :id="it.id"
+            :word="it.word"
+            :x="it.x"
+            :y="it.y"
+            :isDragging="it.isDragging"
+            :absX="it.absX"
+            :absY="it.absY"
+            :opacity="bottomOpacity"
+            @pointerdown="handleChildPointerDown"
+            @mounted="handleChildMounted"
+            @resized="handleChildResized"
+          />
+        </div>
       </div>
       
       <!-- 中间战斗区 -->
@@ -588,6 +793,7 @@ function applyStateChange(partial) {
             :enemy="gameState.enemy"
             :minions="gameState.minions"
             :player="gameState.player"
+            :minionImages="minionImages"
             @card-hover="handleCardHover"
           />
         </div>
@@ -601,8 +807,26 @@ function applyStateChange(partial) {
             class="drop-zone"
             ref="dropEl"
           >
+            <!-- 连接线覆盖层：仅在存在两个及以上词时显示 -->
+            <svg
+              v-if="dropConnections.lines.length"
+              class="drop-connections"
+              :viewBox="`0 0 ${dropConnections.width} ${dropConnections.height}`"
+              preserveAspectRatio="none"
+            >
+              <g class="lines">
+                <line
+                  v-for="line in dropConnections.lines"
+                  :key="line.key"
+                  :x1="line.x1"
+                  :y1="line.y1"
+                  :x2="line.x2"
+                  :y2="line.y2"
+                />
+              </g>
+            </svg>
             <div v-if="dropItems.length === 0" class="drop-hint">
-              将词语拖到这里
+              Drag words here
             </div>
             <Word
               v-for="it in dropItems"
@@ -620,51 +844,43 @@ function applyStateChange(partial) {
             />
           </div>
 
-          <!-- 分隔线 -->
+          <!-- Separator -->
           <div class="right-card-sep" />
 
-          <!-- 卡片下半：输入提示词区域（4） -->
+          <!-- Card bottom half: input prompt area (4) -->
           <div class="input-area in-card">
             <textarea
               v-model="userPrompt"
-              placeholder="输入你的提示..."
+              placeholder="What magic will you craft from these words..."
               :disabled="isLoading"
             ></textarea>
           </div>
         </div>
-        <!-- 发送按钮移动到卡片下方，不贴边 -->
+        <!-- Send button moved below card, not edge-aligned -->
         <div class="send-row">
           <button @click="handleSend" :disabled="isLoading">
-            {{ isLoading ? '生成中...' : '发送' }}
+            {{ isLoading ? 'Generating...' : 'Send' }}
           </button>
         </div>
       </div>
     </div>
     
-    <!-- 下部区域：30% - 词语漂浮框 -->
-    <div
-      class="bottom-section"
-    >
-      <!-- 顶层字幕层：始终覆盖在最上层 -->
+    
+    <!-- 字幕：Teleport 到 body，固定定位全局显示 -->
+    <teleport to="body">
       <div class="subtitle" :style="{ opacity: subtitleOpacity }">{{ subtitleText }}</div>
-      <div class="bottom-box" ref="bottomEl">
-        <Word
-          v-for="it in bottomItems"
-          :key="it.id"
-          :id="it.id"
-          :word="it.word"
-          :x="it.x"
-          :y="it.y"
-          :isDragging="it.isDragging"
-          :absX="it.absX"
-          :absY="it.absY"
-          :opacity="bottomOpacity"
-          @pointerdown="handleChildPointerDown"
-          @mounted="handleChildMounted"
-          @resized="handleChildResized"
-        />
+    </teleport>
+
+    <!-- 悬浮状态框：Teleport 到 body，固定定位，可越界于应用外 -->
+    <teleport to="body">
+      <div
+        v-if="isHoveringCard"
+        class="hover-status-tooltip"
+        :style="computeTooltipStyle(mouseX, mouseY)"
+      >
+        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : 'No status effects' }}
       </div>
-    </div>
+    </teleport>
   </div>
 </template>
 
@@ -687,7 +903,7 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   background-color: #000000;
   color: #f0f0f0;
 }
@@ -758,7 +974,7 @@ body {
   min-height: 0; /* 允许内部按比例伸展 */
 }
 
-/* 右侧卡片内的 6:4 高度分配 */
+/* 6:4 height allocation within right card */
 .right-panel-card .drop-zone {
   flex: 6;
 }
@@ -781,6 +997,21 @@ body {
   overflow: hidden;
   min-height: 0;
 }
+
+  /* 右侧放词区的连线覆盖层 */
+  .drop-connections {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* 不影响拖拽 */
+    z-index: 0; /* 位于词之下（词 zIndex=1/1000）*/
+  }
+  .drop-connections .lines line {
+    stroke: rgba(255, 255, 200, 0.22);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
 
 .drop-hint {
   position: absolute;
@@ -818,8 +1049,8 @@ body {
   border: 2px solid #323232;
   background-color: #141414;
   color: #9696c8;
-  font-size: var(--font-sm);
-  font-family: 'Courier New', monospace;
+  font-size: var(--font-md);
+  font-family: Garamond, 'Times New Roman', serif;
   outline: none;
   transition: border-color 0.3s;
 }
@@ -844,8 +1075,8 @@ body {
   border: none;
   background-color: #141414;
   color: #9696c8;
-  font-size: var(--font-sm);
-  font-family: 'Courier New', monospace;
+  font-size: var(--font-md);
+  font-family: Garamond, 'Times New Roman', serif;
   outline: none;
   transition: border-color 0.3s;
   line-height: 1.6;
@@ -869,7 +1100,7 @@ body {
   cursor: pointer;
   font-size: var(--font-sm);
   font-weight: normal;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   transition: all 0.2s;
   white-space: nowrap;
   letter-spacing: 1px;
@@ -888,11 +1119,11 @@ body {
   cursor: not-allowed;
 }
 
-/* 卡片外的发送按钮行，避免贴边 */
+/* Send button row outside card, avoid edge-alignment */
 .send-row {
   margin-top: var(--gap-sm);
   display: flex;
-  justify-content: center; /* 水平居中按钮 */
+  justify-content: center; /* Center button horizontally */
 }
 
 .send-row button {
@@ -903,7 +1134,7 @@ body {
   cursor: pointer;
   font-size: var(--font-sm);
   font-weight: normal;
-  font-family: 'Courier New', monospace;
+  font-family: Garamond, 'Times New Roman', serif;
   transition: all 0.2s;
   white-space: nowrap;
   letter-spacing: 1px;
@@ -934,7 +1165,7 @@ body {
 
 .bottom-box {
   position: relative;
-  height: calc(100% - var(--gap)); /* 与下边界留出距离 */
+  height: calc(100% - var(--gap)); /* 与下边界留出距离（用于底部区域的旧样式）*/
   margin: 0 var(--bottom-hmargin); /* 自适应左右留白 */
   margin-top: var(--gap-sm); /* 与上边界留出一点距离 */
   background-color: #0a0a0a;
@@ -943,22 +1174,48 @@ body {
   box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
 }
 
+/* 左侧面板内的漂浮框：占满面板且无额外边距 */
+.left-panel-container .bottom-box {
+  height: 100%;
+  margin: 0;
+}
+
 /* 字幕样式：位于上下分界线处（底部区域顶部），金色淡入淡出 */
 .subtitle {
-  position: absolute;
-  top: 0; /* 放在 bottom-section 顶部边界处 */
+  position: fixed;
+  top: clamp(8px, 2vh, 24px);
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   color: #ffd700;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.6), 0 0 18px rgba(255, 215, 0, 0.35);
   font-size: clamp(14px, 1.8vw, 22px);
-  font-weight: bold;
+  font-weight: 500;
+  font-style: italic;
+  font-family: 'Cormorant Garamond', Garamond, 'Times New Roman', serif;
   letter-spacing: 1px;
   pointer-events: none;
   transition: opacity 0.25s ease;
   white-space: pre-wrap;
-  max-width: calc(100% - 2 * var(--bottom-hmargin));
+  max-width: calc(100vw - 2 * var(--gap));
   text-align: center;
-  z-index: 9999;
+  z-index: 10000;
+}
+
+/* 悬浮状态框：统一艺术风格 */
+.hover-status-tooltip {
+  position: fixed; /* 独立于布局，允许越界浏览器可视范围 */
+  max-width: min(40vw, 560px);
+  padding: clamp(6px, 1.2vw, 12px) clamp(8px, 1.6vw, 16px);
+  background-color: #0a0a0a;
+  color: #f0f0f0;
+  border: 2px solid #323232;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 15px rgba(255, 255, 128, 0.18);
+  border-radius: 6px;
+  pointer-events: none; /* 不拦截鼠标 */
+  white-space: pre-wrap; /* 支持多行状态 */
+  line-height: 1.5;
+  font-family: Garamond, 'Times New Roman', serif;
+  font-size: var(--font-sm);
+  z-index: 100000; /* 高于字幕层 */
 }
 </style>
