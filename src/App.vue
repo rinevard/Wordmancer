@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import Word from './components/Word.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import Battlefield from './components/Battlefield.vue';
@@ -165,10 +165,68 @@ const gameState = ref({
   words: INITIAL_WORDS.slice()
 });
 
+// 悬浮状态（来自战场卡牌）
 const hoveredStatus = ref('');
+const isHoveringCard = ref(false);
+// 在进入悬停瞬间锁定提示方向（相对于指针：right/bottom 为 true 表示向右/向下偏移）
+const tooltipLock = ref(null);
+// 鼠标坐标（用于决定象限与定位）
+const mouseX = ref(0);
+const mouseY = ref(0);
 
-function handleCardHover(status) {
-  hoveredStatus.value = status;
+function handleCardHover(payload) {
+  const wasHovering = isHoveringCard.value;
+  if (payload && typeof payload === 'object') {
+    isHoveringCard.value = !!payload.hovering;
+    hoveredStatus.value = payload.status ?? '';
+  } else {
+    // 兼容旧字符串形式
+    isHoveringCard.value = !!payload;
+    hoveredStatus.value = String(payload || '');
+  }
+  // 进入时锁定一次方向（以进入瞬间的鼠标象限的对立象限为准）
+  if (!wasHovering && isHoveringCard.value) {
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const isRight = mouseX.value >= cx;
+    const isBottom = mouseY.value >= cy;
+    // 取对立象限：指针在右上，则锁定左下；指针在左下，则锁定右上 ...
+    tooltipLock.value = { right: !isRight, bottom: !isBottom };
+  }
+  // 离开时清除锁定
+  if (wasHovering && !isHoveringCard.value) {
+    tooltipLock.value = null;
+  }
+}
+
+function onMouseMove(e) {
+  mouseX.value = e.clientX;
+  mouseY.value = e.clientY;
+}
+
+function computeTooltipStyle(x, y) {
+  const gap = 10; // 与指针间距
+  const pos = `${gap}px`;
+  const negFull = `calc(-100% - ${gap}px)`;
+
+  // 若已锁定，沿用锁定方向；否则使用“当前象限的对立象限”作为即时方向
+  let lock = tooltipLock.value;
+  if (!lock) {
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const isRight = x >= cx;
+    const isBottom = y >= cy;
+    lock = { right: !isRight, bottom: !isBottom };
+  }
+
+  const tx = lock.right ? pos : negFull;
+  const ty = lock.bottom ? pos : negFull;
+
+  return {
+    left: `${x}px`,
+    top: `${y}px`,
+    transform: `translate(${tx}, ${ty})`,
+  };
 }
 
 // 语音
@@ -473,6 +531,7 @@ onMounted(() => {
   initVoices();
   rafId = requestAnimationFrame(tick);
   window.addEventListener('resize', onResize);
+  window.addEventListener('mousemove', onMouseMove);
   // 首次布局战场比例
   layoutBattlefieldFit();
   // 监听容器尺寸变化（更精细 than window.resize）
@@ -488,6 +547,7 @@ onUnmounted(() => {
   if (rafId) cancelAnimationFrame(rafId);
   cancelSubtitleAnim();
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('mousemove', onMouseMove);
   window.removeEventListener('pointermove', onPointerMove);
   if (battlefieldResizeObserver.value) {
     try { battlefieldResizeObserver.value.disconnect(); } catch (e) {}
@@ -665,6 +725,17 @@ function applyStateChange(partial) {
         />
       </div>
     </div>
+
+    <!-- 悬浮状态框：Teleport 到 body，固定定位，可越界于应用外 -->
+    <teleport to="body">
+      <div
+        v-if="isHoveringCard"
+        class="hover-status-tooltip"
+        :style="computeTooltipStyle(mouseX, mouseY)"
+      >
+        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : '无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n无特殊状态\n' }}
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -960,5 +1031,23 @@ body {
   max-width: calc(100% - 2 * var(--bottom-hmargin));
   text-align: center;
   z-index: 9999;
+}
+
+/* 悬浮状态框：统一艺术风格 */
+.hover-status-tooltip {
+  position: fixed; /* 独立于布局，允许越界浏览器可视范围 */
+  max-width: min(40vw, 560px);
+  padding: clamp(6px, 1.2vw, 12px) clamp(8px, 1.6vw, 16px);
+  background-color: #0a0a0a;
+  color: #f0f0f0;
+  border: 2px solid #323232;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 15px rgba(255, 255, 128, 0.18);
+  border-radius: 6px;
+  pointer-events: none; /* 不拦截鼠标 */
+  white-space: pre-wrap; /* 支持多行状态 */
+  line-height: 1.5;
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-sm);
+  z-index: 100000; /* 高于字幕层 */
 }
 </style>

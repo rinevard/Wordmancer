@@ -7,8 +7,8 @@
         :health="enemy.health"
         :intent="enemy.intent"
         type="enemy"
-        @mouseenter="$emit('card-hover', enemy.status)"
-        @mouseleave="$emit('card-hover', '')"
+        @mouseenter="$emit('card-hover', { hovering: true, status: enemy.status })"
+        @mouseleave="$emit('card-hover', { hovering: false })"
       />
     </div>
     <div class="minions-area">
@@ -18,8 +18,8 @@
         :name="minion.name"
         :attack="minion.attack"
         :health="minion.health"
-        @mouseenter="$emit('card-hover', minion.status)"
-        @mouseleave="$emit('card-hover', '')"
+        @mouseenter="$emit('card-hover', { hovering: true, status: minion.status })"
+        @mouseleave="$emit('card-hover', { hovering: false })"
       />
     </div>
     <div class="player-area">
@@ -28,8 +28,8 @@
         name="Player"
         :health="player.health"
         type="player"
-        @mouseenter="$emit('card-hover', player.status)"
-        @mouseleave="$emit('card-hover', '')"
+        @mouseenter="$emit('card-hover', { hovering: true, status: player.status })"
+        @mouseleave="$emit('card-hover', { hovering: false })"
       />
     </div>
   </div>
