@@ -205,6 +205,11 @@ const gameState = ref({
   words: INITIAL_WORDS.slice()
 });
 
+// 历史：past_states（用于提示 LLM 的回溯上下文）
+const pastStates = ref([]); // 每项：{ state, change_overview }
+// 暂存本回合首个 analyze 文本
+let firstAnalyzeText = '';
+
 // 文生图：随从名 -> 图片 URL
 const minionImages = ref({});
 const generatingNames = new Set();
@@ -674,7 +679,13 @@ async function handleSend() {
     dropItems.value = [];
     // 保持底部手牌可见，不再在生成期间淡出
     let producedAny = false;
-    for await (const step of generateStoryStream(gameState.value, action)) {
+    // 传入 past_states，并捕获首个 analyze 文本
+    firstAnalyzeText = '';
+    const streamOptions = {
+      pastStates: pastStates.value,
+      onFirstAnalyze: (txt) => { if (!firstAnalyzeText) firstAnalyzeText = String(txt || ''); },
+    };
+    for await (const step of generateStoryStream(gameState.value, action, streamOptions)) {
       if (step.type === 'narrator' && step.text) {
         story.value += (story.value ? '\n' : '') + step.text;
         producedAny = true;
@@ -698,6 +709,15 @@ async function handleSend() {
     const next = pendingWords.value ?? gameState.value.words ?? [];
     pendingWords.value = null;
     queueBottomWordsUpdate(next);
+    // 回合完成：将本回合前置的 state 与首个 analyze 记录到 past_states
+    try {
+      const snapshotState = JSON.parse(JSON.stringify(gameState.value));
+      const changeOverview = firstAnalyzeText || '';
+      pastStates.value = [
+        ...pastStates.value,
+        { state: snapshotState, change_overview: changeOverview }
+      ];
+    } catch (_) {}
   }
 }
 

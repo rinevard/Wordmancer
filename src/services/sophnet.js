@@ -1,4 +1,4 @@
-import basePromptMd from '../../dev_docs/prompt.md?raw';
+import basePromptMd from '../../dev_docs/prompt_context.md?raw';
 
 const apiKey = import.meta.env.VITE_SOPHNET_API_KEY;
 if (!apiKey) {
@@ -8,12 +8,12 @@ if (!apiKey) {
 const MODEL = import.meta.env.VITE_SOPHNET_MODEL || 'DeepSeek-V3-Fast';
 const API_URL = 'https://www.sophnet.com/api/open-apis/v1/chat/completions';
 
-function buildPrompt(currentState, action) {
-  const inputObj = { current_state: currentState, action };
+function buildPrompt(currentState, action, pastStates) {
+  const inputObj = { past_states: Array.isArray(pastStates) ? pastStates : [], current_state: currentState, action };
   return `${basePromptMd.trim()}\n\n\`\`\`json\n${JSON.stringify(inputObj, null, 2)}\n\`\`\``;
 }
 
-function parseSegments(text, analyzeCollector) {
+function parseSegments(text, analyzeCollector, onAnalyze) {
   const steps = [];
   if (!text || typeof text !== 'string') return steps;
 
@@ -26,6 +26,7 @@ function parseSegments(text, analyzeCollector) {
     const inner = full.replace(new RegExp(`^<${tag}>`), '').replace(new RegExp(`<\/${tag}>$`), '').trim();
     if (tag === 'analyze') {
       if (analyzeCollector) analyzeCollector.push(inner);
+      try { if (onAnalyze) onAnalyze(inner); } catch (_) {}
       continue;
     }
     if (tag === 'narrator') {
@@ -53,7 +54,7 @@ function parseSegments(text, analyzeCollector) {
   return steps;
 }
 
-function extractCompletedSegments(buffer, analyzeCollector) {
+function extractCompletedSegments(buffer, analyzeCollector, onAnalyze) {
   const steps = [];
   if (!buffer || typeof buffer !== 'string') return { steps, rest: buffer || '' };
 
@@ -87,6 +88,7 @@ function extractCompletedSegments(buffer, analyzeCollector) {
 
     if (found.tag === 'analyze') {
       if (analyzeCollector) analyzeCollector.push(found.inner);
+      try { if (onAnalyze) onAnalyze(found.inner); } catch (_) {}
       buffer = buffer.slice(found.end);
       continue;
     }
@@ -184,10 +186,14 @@ async function* streamSophnet(messages) {
   }
 }
 
-export async function* generateStoryStream(currentState, action) {
-  const prompt = buildPrompt(currentState, action);
+export async function* generateStoryStream(currentState, action, options = {}) {
+  const prompt = buildPrompt(currentState, action, options.pastStates);
   let buffer = '';
   const analyzeSegments = [];
+  let firstCaptured = false;
+  const onAnalyze = options?.onFirstAnalyze
+    ? (text) => { if (!firstCaptured) { firstCaptured = true; try { options.onFirstAnalyze(text); } catch (_) {} } }
+    : null;
   try {
     const messages = [
       { role: 'user', content: prompt },
@@ -195,14 +201,14 @@ export async function* generateStoryStream(currentState, action) {
     for await (const delta of streamSophnet(messages)) {
       if (!delta) continue;
       buffer += delta;
-      const { steps, rest } = extractCompletedSegments(buffer, analyzeSegments);
+      const { steps, rest } = extractCompletedSegments(buffer, analyzeSegments, onAnalyze);
       buffer = rest;
       for (const step of steps) {
         yield step;
       }
     }
     if (buffer && buffer.trim()) {
-      const remaining = parseSegments(buffer, analyzeSegments);
+      const remaining = parseSegments(buffer, analyzeSegments, onAnalyze);
       for (const step of remaining) {
         yield step;
       }

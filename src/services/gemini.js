@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import basePromptMd from '../../dev_docs/prompt.md?raw';
+import basePromptMd from '../../dev_docs/prompt_context.md?raw';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 if (!apiKey) {
@@ -9,12 +9,12 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
-function buildPrompt(currentState, action) {
-  const inputObj = { current_state: currentState, action };
+function buildPrompt(currentState, action, pastStates) {
+  const inputObj = { past_states: Array.isArray(pastStates) ? pastStates : [], current_state: currentState, action };
   return `${basePromptMd.trim()}\n\n\`\`\`json\n${JSON.stringify(inputObj, null, 2)}\n\`\`\``;
 }
 
-function parseSegments(text, analyzeCollector) {
+function parseSegments(text, analyzeCollector, onAnalyze) {
   const steps = [];
   if (!text || typeof text !== 'string') return steps;
 
@@ -29,6 +29,7 @@ function parseSegments(text, analyzeCollector) {
     if (tag === 'analyze') {
       // 收集 analyze 段落
       if (analyzeCollector) analyzeCollector.push(inner);
+      try { if (onAnalyze) onAnalyze(inner); } catch (_) {}
       continue;
     }
     if (tag === 'narrator') {
@@ -59,14 +60,18 @@ function parseSegments(text, analyzeCollector) {
   return steps;
 }
 
-export async function generateStory(currentState, action) {
-  const prompt = buildPrompt(currentState, action);
+export async function generateStory(currentState, action, options = {}) {
+  const prompt = buildPrompt(currentState, action, options.pastStates);
   try {
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
     const analyzeSegments = [];
-    const steps = parseSegments(text, analyzeSegments);
+    let firstCaptured = false;
+    const onAnalyze = options?.onFirstAnalyze
+      ? (t) => { if (!firstCaptured) { firstCaptured = true; try { options.onFirstAnalyze(t); } catch (_) {} } }
+      : null;
+    const steps = parseSegments(text, analyzeSegments, onAnalyze);
     try {
       // 打印所有 analyze 段
       if (analyzeSegments.length > 0) {
@@ -85,7 +90,7 @@ export async function generateStory(currentState, action) {
 }
 
 // 增量解析：从缓冲区中提取按顺序完成的段落，返回解析出的 steps 以及剩余未完整的缓冲
-function extractCompletedSegments(buffer, analyzeCollector) {
+function extractCompletedSegments(buffer, analyzeCollector, onAnalyze) {
   const steps = [];
   if (!buffer || typeof buffer !== 'string') return { steps, rest: buffer || '' };
 
@@ -124,6 +129,7 @@ function extractCompletedSegments(buffer, analyzeCollector) {
     if (found.tag === 'analyze') {
       // 收集分析段
       if (analyzeCollector) analyzeCollector.push(found.inner);
+      try { if (onAnalyze) onAnalyze(found.inner); } catch (_) {}
       buffer = buffer.slice(found.end);
       continue;
     }
@@ -157,17 +163,21 @@ function extractCompletedSegments(buffer, analyzeCollector) {
 }
 
 // 流式输出：返回一个异步生成器，逐段产出 { type, text | state }
-export async function* generateStoryStream(currentState, action) {
-  const prompt = buildPrompt(currentState, action);
+export async function* generateStoryStream(currentState, action, options = {}) {
+  const prompt = buildPrompt(currentState, action, options.pastStates);
   let buffer = '';
   const analyzeSegments = [];
+  let firstCaptured = false;
+  const onAnalyze = options?.onFirstAnalyze
+    ? (text) => { if (!firstCaptured) { firstCaptured = true; try { options.onFirstAnalyze(text); } catch (_) {} } }
+    : null;
   try {
     const result = await model.generateContentStream(prompt);
     for await (const chunk of result.stream) {
       const delta = chunk.text();
       if (!delta) continue;
       buffer += delta;
-      const { steps, rest } = extractCompletedSegments(buffer, analyzeSegments);
+      const { steps, rest } = extractCompletedSegments(buffer, analyzeSegments, onAnalyze);
       buffer = rest;
       for (const step of steps) {
         yield step;
@@ -175,7 +185,7 @@ export async function* generateStoryStream(currentState, action) {
     }
     // 流结束，尝试冲刷剩余缓冲
     if (buffer && buffer.trim()) {
-      const remaining = parseSegments(buffer, analyzeSegments);
+      const remaining = parseSegments(buffer, analyzeSegments, onAnalyze);
       for (const step of remaining) {
         yield step;
       }
