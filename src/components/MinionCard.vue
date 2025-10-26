@@ -113,7 +113,7 @@ watch(() => props.attack, async (nv, ov) => {
 
 .name {
   font-weight: 700;
-  font-size: clamp(14px, 1.6vw, 18px);
+  font-size: clamp(10px, 1.4vw, 16px);
   line-height: 1.2;
   color: #f5f6ff;
   margin-top: 6px;
@@ -123,7 +123,7 @@ watch(() => props.attack, async (nv, ov) => {
   position: absolute;
   bottom: 8px;
   left: 10px;
-  font-size: clamp(1rem, 2.2vw, 1.5rem);
+  font-size: clamp(0.8rem, 1.8vw, 1.4rem);
   font-weight: 800;
   color: #e8e8e8;
 }
@@ -132,7 +132,7 @@ watch(() => props.attack, async (nv, ov) => {
   position: absolute;
   bottom: 8px;
   right: 10px;
-  font-size: clamp(1rem, 2.2vw, 1.5rem);
+  font-size: clamp(0.8rem, 1.8vw, 1.4rem);
   font-weight: 800;
   color: #e8e8e8;
 }
