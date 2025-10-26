@@ -55,6 +55,8 @@ npm run dev
 
 This will start the application in development mode. You can then open your browser and navigate to the local address provided in the terminal to play the game.
 
+We recommend playing the game in Microsoft Edge, as the text-to-speech narration has only been tested in Edge.
+
 ## Available Scripts
 
 - `npm run dev`: Runs the app in development mode.
