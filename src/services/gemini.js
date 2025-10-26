@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import basePromptMd from '../../dev_docs/prompt_context.md?raw';
+import basePromptMd from '../../dev_docs/prompt_en.md?raw';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 if (!apiKey) {

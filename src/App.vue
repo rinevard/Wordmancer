@@ -43,8 +43,8 @@ function createItem(word) {
   };
 }
 
-// 首回合初始手牌（同时用于底部漂浮与 current_state.words）
-const INITIAL_WORDS = ['锁链', '冰霜', '碎裂', '打击', '扭曲', '召唤'];
+// Initial hand for the first turn (used for both bottom floating and current_state.words)
+const INITIAL_WORDS = ['Chain', 'Frost', 'Shatter', 'Strike', 'Twist', 'Summon'];
 const bottomItems = ref(INITIAL_WORDS.map(createItem));
 
 const dropItems = ref([]);
@@ -193,7 +193,7 @@ function queueBottomWordsUpdate(newWords) {
 const gameState = ref({
   enemy: {
     health: 60,
-    intent: "意图：攻击",
+    intent: "Intent: Attack",
     status: ""
   },
   minions: [
@@ -205,9 +205,9 @@ const gameState = ref({
   words: INITIAL_WORDS.slice()
 });
 
-// 历史：past_states（用于提示 LLM 的回溯上下文）
-const pastStates = ref([]); // 每项：{ state, change_overview }
-// 暂存本回合首个 analyze 文本
+// History: past_states (for prompting LLM with retrospective context)
+const pastStates = ref([]); // Each item: { state, change_overview }
+// Store the first analyze text of this turn
 let firstAnalyzeText = '';
 
 // 文生图：随从名 -> 图片 URL
@@ -664,7 +664,7 @@ const battlefieldResizeObserver = ref(null);
 
 async function handleSend() {
   if (!userPrompt.value.trim()) {
-    alert('请输入提示');
+    alert('Please enter a prompt');
     return;
   }
   isLoading.value = true;
@@ -699,17 +699,17 @@ async function handleSend() {
       }
     }
     if (!producedAny) {
-      await speakAsync('抱歉，剧情生成失败。');
+      await speakAsync('Sorry, story generation failed.');
     }
   } finally {
     isLoading.value = false;
-    // 按钮可再次点击时清空输入框
+    // Clear input box when button can be clicked again
     userPrompt.value = '';
-    // 结束后根据 pendingWords 或当前 gameState.words 恢复/更新底部手牌并淡入
+    // After completion, restore/update bottom hand based on pendingWords or current gameState.words and fade in
     const next = pendingWords.value ?? gameState.value.words ?? [];
     pendingWords.value = null;
     queueBottomWordsUpdate(next);
-    // 回合完成：将本回合前置的 state 与首个 analyze 记录到 past_states
+    // Turn complete: record the pre-turn state and first analyze to past_states
     try {
       const snapshotState = JSON.parse(JSON.stringify(gameState.value));
       const changeOverview = firstAnalyzeText || '';
@@ -826,7 +826,7 @@ function applyStateChange(partial) {
               </g>
             </svg>
             <div v-if="dropItems.length === 0" class="drop-hint">
-              将词语拖到这里
+              Drag words here
             </div>
             <Word
               v-for="it in dropItems"
@@ -844,22 +844,22 @@ function applyStateChange(partial) {
             />
           </div>
 
-          <!-- 分隔线 -->
+          <!-- Separator -->
           <div class="right-card-sep" />
 
-          <!-- 卡片下半：输入提示词区域（4） -->
+          <!-- Card bottom half: input prompt area (4) -->
           <div class="input-area in-card">
             <textarea
               v-model="userPrompt"
-              placeholder="输入你的提示..."
+              placeholder="What magic will you craft from these words..."
               :disabled="isLoading"
             ></textarea>
           </div>
         </div>
-        <!-- 发送按钮移动到卡片下方，不贴边 -->
+        <!-- Send button moved below card, not edge-aligned -->
         <div class="send-row">
           <button @click="handleSend" :disabled="isLoading">
-            {{ isLoading ? '生成中...' : '发送' }}
+            {{ isLoading ? 'Generating...' : 'Send' }}
           </button>
         </div>
       </div>
@@ -878,7 +878,7 @@ function applyStateChange(partial) {
         class="hover-status-tooltip"
         :style="computeTooltipStyle(mouseX, mouseY)"
       >
-        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : '无特殊状态' }}
+        {{ hoveredStatus && hoveredStatus.trim() ? hoveredStatus : 'No status effects' }}
       </div>
     </teleport>
   </div>
@@ -974,7 +974,7 @@ body {
   min-height: 0; /* 允许内部按比例伸展 */
 }
 
-/* 右侧卡片内的 6:4 高度分配 */
+/* 6:4 height allocation within right card */
 .right-panel-card .drop-zone {
   flex: 6;
 }
@@ -1119,11 +1119,11 @@ body {
   cursor: not-allowed;
 }
 
-/* 卡片外的发送按钮行，避免贴边 */
+/* Send button row outside card, avoid edge-alignment */
 .send-row {
   margin-top: var(--gap-sm);
   display: flex;
-  justify-content: center; /* 水平居中按钮 */
+  justify-content: center; /* Center button horizontally */
 }
 
 .send-row button {
