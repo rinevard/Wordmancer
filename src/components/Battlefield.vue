@@ -28,6 +28,7 @@
           :name="slot.name"
           :attack="slot.attack"
           :health="slot.health"
+          :imageSrc="props.minionImages && slot?.name ? props.minionImages[slot.name] : undefined"
           @mouseenter="$emit('card-hover', { hovering: true, status: slot.status })"
           @mouseleave="$emit('card-hover', { hovering: false })"
         />
@@ -57,7 +58,8 @@ import MinionCard from './MinionCard.vue';
 const props = defineProps({
   enemy: Object,
   minions: Array,
-  player: Object
+  player: Object,
+  minionImages: Object
 });
 
 defineEmits(['card-hover']);

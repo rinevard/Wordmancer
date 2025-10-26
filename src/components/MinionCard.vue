@@ -1,7 +1,10 @@
 <template>
   <div class="minion-card" ref="cardEl" @mouseenter="$emit('mouseenter')" @mouseleave="$emit('mouseleave')">
     <div class="art">
-      <img :src="effectiveImage" alt="minion" />
+      <div v-if="!props.imageSrc" class="art-loading">
+        <div class="spinner" />
+      </div>
+      <img v-else :src="props.imageSrc" alt="minion" />
     </div>
     <div class="name">{{ name }}</div>
     <div class="attack" ref="atkEl">{{ attack }}</div>
@@ -10,8 +13,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue';
-import defaultMinion from '../../test_minion.png';
+import { ref, watch, nextTick } from 'vue';
 
 const props = defineProps({
   name: String,
@@ -24,8 +26,6 @@ defineEmits(['mouseenter', 'mouseleave']);
 const cardEl = ref(null);
 const atkEl = ref(null);
 const hpEl = ref(null);
-
-const effectiveImage = computed(() => props.imageSrc || defaultMinion);
 
 function triggerAnimation(elRef, className) {
   const el = elRef && elRef.value;
@@ -104,6 +104,28 @@ watch(() => props.attack, async (nv, ov) => {
   object-fit: contain; /* 适配1328x1328，保持比例不裁切 */
   display: block;
   /* filter: grayscale(100%) invert(100%); */
+}
+
+.art-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .minion-card:hover {

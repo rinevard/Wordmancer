@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import Word from './components/Word.vue';
 import Battlefield from './components/Battlefield.vue';
 import { generateStoryStream } from './services/sophnet.js';
 import { BACK_SPEED, DRAG_LERP, MAX_SPEED, MIN_SPEED } from './constants.js';
 import { initVoices, disposeVoices, speakAsync } from './services/tts.js';
+import { getOrGenerateMinionImage } from './services/tti.js';
 
 // 容器引用
 const bottomEl = ref(null);
@@ -196,12 +197,6 @@ const gameState = ref({
     status: ""
   },
   minions: [
-    {
-      name: "测试随从",
-      attack: 3,
-      health: 4,
-      status: ""
-    }
   ],
   player: {
     health: 30,
@@ -209,6 +204,37 @@ const gameState = ref({
   },
   words: INITIAL_WORDS.slice()
 });
+
+// 文生图：随从名 -> 图片 URL
+const minionImages = ref({});
+const generatingNames = new Set();
+
+function ensureMinionImage(name) {
+  const key = String(name || '').trim();
+  if (!key) return;
+  if (minionImages.value[key]) return;
+  if (generatingNames.has(key)) return;
+  generatingNames.add(key);
+  getOrGenerateMinionImage(key)
+    .then((url) => {
+      if (url) {
+        // 触发响应式更新
+        minionImages.value = { ...minionImages.value, [key]: url };
+      }
+    })
+    .catch(() => {})
+    .finally(() => generatingNames.delete(key));
+}
+
+// 监听随从列表变化，按名称触发图片生成/缓存
+watch(
+  () => (gameState.value.minions || []).map((m) => m?.name).join('|'),
+  () => {
+    const list = Array.isArray(gameState.value.minions) ? gameState.value.minions : [];
+    for (const m of list) ensureMinionImage(m?.name);
+  },
+  { immediate: true }
+);
 
 // 悬浮状态（来自战场卡牌）
 const hoveredStatus = ref('');
@@ -747,6 +773,7 @@ function applyStateChange(partial) {
             :enemy="gameState.enemy"
             :minions="gameState.minions"
             :player="gameState.player"
+            :minionImages="minionImages"
             @card-hover="handleCardHover"
           />
         </div>
