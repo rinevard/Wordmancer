@@ -44,7 +44,7 @@ function createItem(word) {
 }
 
 // Initial hand for the first turn (used for both bottom floating and current_state.words)
-const INITIAL_WORDS = ['Chain', 'Frost', 'Shatter', 'Strike', 'Twist', 'Summon'];
+const INITIAL_WORDS = ['锁链', '冰霜', '破碎', '打击', '扭曲', '召唤'];
 const bottomItems = ref(INITIAL_WORDS.map(createItem));
 
 const dropItems = ref([]);
@@ -192,7 +192,7 @@ function queueBottomWordsUpdate(newWords) {
 
 const gameState = ref({
   enemy: {
-    health: 60,
+    health: 30,
     intent: "Intent: Attack",
     status: ""
   },
@@ -214,13 +214,13 @@ let firstAnalyzeText = '';
 const minionImages = ref({});
 const generatingNames = new Set();
 
-function ensureMinionImage(name) {
+function ensureMinionImage(name, changeOverview = '') {
   const key = String(name || '').trim();
   if (!key) return;
   if (minionImages.value[key]) return;
   if (generatingNames.has(key)) return;
   generatingNames.add(key);
-  getOrGenerateMinionImage(key)
+  getOrGenerateMinionImage(key, changeOverview)
     .then((url) => {
       if (url) {
         // 触发响应式更新
@@ -236,7 +236,9 @@ watch(
   () => (gameState.value.minions || []).map((m) => m?.name).join('|'),
   () => {
     const list = Array.isArray(gameState.value.minions) ? gameState.value.minions : [];
-    for (const m of list) ensureMinionImage(m?.name);
+    // 使用当前回合的 analyze 文本作为上下文
+    const overview = firstAnalyzeText || '';
+    for (const m of list) ensureMinionImage(m?.name, overview);
   },
   { immediate: true }
 );

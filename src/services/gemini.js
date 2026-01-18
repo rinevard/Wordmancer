@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import basePromptMd from '../../dev_docs/prompt_en.md?raw';
+import basePromptMd from '../../dev_docs/prompt_context.md?raw';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 if (!apiKey) {
@@ -7,7 +7,7 @@ if (!apiKey) {
 }
 const genAI = new GoogleGenerativeAI(apiKey);
 
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
 
 function buildPrompt(currentState, action, pastStates) {
   const inputObj = { past_states: Array.isArray(pastStates) ? pastStates : [], current_state: currentState, action };

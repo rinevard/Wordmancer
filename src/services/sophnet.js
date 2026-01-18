@@ -1,4 +1,4 @@
-import basePromptMd from '../../dev_docs/prompt_en.md?raw';
+import basePromptMd from '../../dev_docs/prompt_context.md?raw';
 
 const apiKey = import.meta.env.VITE_SOPHNET_API_KEY;
 if (!apiKey) {

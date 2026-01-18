@@ -1,4 +1,5 @@
 import imgPromptTpl from '../../dev_docs/img_prompt.md?raw';
+import imgDescPromptTpl from '../../dev_docs/img_description_prompt.md?raw';
 
 const apiKey = import.meta.env.VITE_SOPHNET_API_KEY;
 if (!apiKey) {
@@ -15,12 +16,65 @@ const STEPS = Number.isFinite(Number(import.meta.env.VITE_TTI_STEPS)) ? Number(i
 
 const BASE = 'https://www.sophnet.com/api/open-apis/projects';
 
+// LLM 配置（用于生成图片描述）
+const LLM_MODEL = import.meta.env.VITE_SOPHNET_MODEL || 'DeepSeek-V3-Fast';
+const LLM_API_URL = 'https://www.sophnet.com/api/open-apis/v1/chat/completions';
+
 // 简单内存缓存：name -> url
 const nameToUrl = new Map();
 
-function buildPromptForName(minionName) {
+/**
+ * 调用 Sophnet LLM 生成随从的视觉描述
+ */
+async function generateImageDescription(minionName, changeOverview) {
   const safeName = String(minionName || '').trim() || '无名随从';
-  return imgPromptTpl.replace('[随从名称]', safeName);
+  const safeOverview = String(changeOverview || '').trim() || '玩家召唤了这个随从。';
+
+  const prompt = imgDescPromptTpl
+    .replace('[随从名称]', safeName)
+    .replace('[回合摘要]', safeOverview);
+
+  try {
+    const resp = await fetch(LLM_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }],
+        model: LLM_MODEL,
+        stream: false,
+      }),
+    });
+
+    if (!resp.ok) {
+      console.warn(`[tti] LLM request failed: ${resp.status}`);
+      return null;
+    }
+
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content?.trim();
+    if (content) {
+      console.log(`[tti] Generated description for "${safeName}":`, content);
+      return content;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[tti] generateImageDescription error:', err);
+    return null;
+  }
+}
+
+/**
+ * 构建最终的图片生成 prompt
+ */
+function buildFinalPrompt(minionName, imageDescription) {
+  const safeName = String(minionName || '').trim() || '无名随从';
+  const safeDesc = String(imageDescription || '').trim() || safeName;
+  return imgPromptTpl
+    .replace('[随从名称]', safeName)
+    .replace('[画面描述]', safeDesc);
 }
 
 async function createTask(prompt) {
@@ -86,11 +140,19 @@ async function pollTaskResult(taskId, {
   }
 }
 
-export async function getOrGenerateMinionImage(minionName) {
+export async function getOrGenerateMinionImage(minionName, changeOverview = '') {
   const key = String(minionName || '').trim();
   if (!key) return null;
   if (nameToUrl.has(key)) return nameToUrl.get(key);
-  const prompt = buildPromptForName(key);
+
+  // 1. 先用 LLM 生成视觉描述
+  const description = await generateImageDescription(key, changeOverview);
+
+  // 2. 构建最终的图片生成 prompt
+  const prompt = buildFinalPrompt(key, description);
+  console.log('[tti] Final image prompt:', prompt);
+
+  // 3. 调用文生图 API
   const taskId = await createTask(prompt);
   const url = await pollTaskResult(taskId);
   nameToUrl.set(key, url);
